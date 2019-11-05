@@ -1,0 +1,104 @@
+#feature selection
+
+boruta_output <- Boruta(income ~ ., data=trainset, doTrace=2)
+
+signf<- getSelectedAttributes(boruta_output,withTentative = FALSE)
+
+
+#to see the balance one last time
+
+table(trainset$income)
+
+ggplot(data=trainset, aes( x=income,fill=income))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+#oversampling minority class
+drops<-c("income")
+set.seed(1000)
+
+over_sampled_train<- upSample(x=trainset[ , !(names(trainset) %in% drops)],
+                              y=trainset$income,
+                              yname="income")
+table(over_sampled_train$income)
+
+#undersampling majority class
+set.seed(1000)
+under_sampled_train <- downSample(x=trainset[ , !(names(trainset) %in% drops)],
+                                  y=trainset$income,
+                                  yname="income")
+table(under_sampled_train$income)
+
+#SMOTE
+trainset.df<-as.data.frame(trainset)
+set.seed(1000)
+smoteTrain<-SMOTE(income ~ ., data=trainset.df)
+
+#LOGISTIC REGRESSION
+
+ #on unbalanced train dataset
+glm_model_unbalanced<-glm(income ~. ,data=trainset.df,
+                          family=binomial(link="logit"),
+                          x=TRUE,
+                          y=TRUE)
+
+predicted_glm_ub_train<- predict(glm_model_unbalanced,newdata=trainset.df,type="response")
+predicted_glm_ub_train<-as.factor(ifelse(predicted_glm_ub_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_ub_train, reference = trainset.df$income,positive = levels(trainset.df$income)[2])
+ #on test set
+predicted_glm_ub_test<- predict(glm_model_unbalanced,newdata=testset,type="response")
+predicted_glm_ub_test<-as.factor(ifelse(predicted_glm_ub_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_ub_test, reference = testset$income, positive = levels(testset$income)[2])
+
+
+ #over sampled trainset
+glm_model_over<-glm(income ~. ,data=over_sampled_train,
+                          family=binomial(link="logit"),
+                          x=TRUE,
+                          y=TRUE)
+
+predicted_glm_over_train<- predict(glm_model_over,newdata=over_sampled_train,type="response")
+predicted_glm_over_train<-as.factor(ifelse(predicted_glm_over_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_over_train, reference = over_sampled_train$income, positive = levels(over_sampled_train$income)[2])
+#on test set
+predicted_glm_over_test<- predict(glm_model_over,newdata=testset,type="response")
+predicted_glm_over_test<-as.factor(ifelse(predicted_glm_over_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_over_test, reference = testset$income, positive = levels(testset$income)[2])
+
+
+#undersampled trainset
+glm_model_under<-glm(income ~. ,data=under_sampled_train,
+                    family=binomial(link="logit"),
+                    x=TRUE,
+                    y=TRUE)
+
+predicted_glm_under_train<- predict(glm_model_over,newdata=under_sampled_train,type="response")
+predicted_glm_under_train<-as.factor(ifelse(predicted_glm_under_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_under_train, reference = under_sampled_train$income, positive = levels(under_sampled_train$income)[2])
+#on test set
+predicted_glm_under_test<- predict(glm_model_under,newdata=testset,type="response")
+predicted_glm_under_test<-as.factor(ifelse(predicted_glm_under_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_under_test, reference = testset$income, positive = levels(testset$income)[2])
+
+
+#smote trainset
+glm_model_smote<-glm(income ~. ,data=smoteTrain,
+                     family=binomial(link="logit"),
+                     x=TRUE,
+                     y=TRUE)
+
+predicted_glm_smote_train<- predict(glm_model_smote,newdata=smoteTrain,type="response")
+predicted_glm_smote_train<-as.factor(ifelse(predicted_glm_smote_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_smote_train, reference = smoteTrain$income, positive = levels(smoteTrain$income)[2])
+#on test set
+predicted_glm_smote_test<- predict(glm_model_smote,newdata=testset,type="response")
+predicted_glm_smote_test<-as.factor(ifelse(predicted_glm_smote_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_smote_test, reference = testset$income, positive = levels(testset$income)[2])
+
+
+
+
+
+
+
+
