@@ -1,0 +1,603 @@
+
+library(forcats)
+library(dplyr)
+library(ggplot2)
+library(stats)
+library(mlbench)
+library(caret)
+library(Boruta)
+library(DMwR)
+library(e1071)
+library("pROC")
+library(randomForest)
+library("xgboost")
+#reading the datasets
+adult_train<-read.csv( "/Users/adult_train.csv", header=F)
+adult_test<-read.csv( "/Users/adult_test.csv", header=F)
+
+#naming the colums
+colnames(adult_train) <- c("age", "workclass", "fnlwgt", "education", "education_num","marital_status", "occupation",
+                           "relationship", "race", "sex", "capital_gain", "capital_loss","hours_per_week", "native_country", "income")
+
+colnames(adult_test) <- c("age", "workclass", "fnlwgt", "education", "education_num","marital_status", "occupation",
+                           "relationship", "race", "sex", "capital_gain", "capital_loss","hours_per_week", "native_country", "income")
+str(adult_train)
+
+#spliting tha data as numerical and categorical 
+attach(adult_train)
+numerical<- data.frame(age,fnlwgt,education_num,capital_gain,capital_loss,hours_per_week)
+categorical<- data.frame(workclass,education,marital_status,occupation,relationship,race,sex,native_country,income)
+summary(numerical)
+summary(categorical)
+sapply(categorical,levels)
+
+#to see how distribution of class attribute
+salary<-table(income)
+addmargins(salary)
+prop.table(salary)
+ggplot(data=adult_train, aes( x=income,fill=income))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+#distribution of class attribute among other attributes
+ggplot(data=adult_train, aes( x=income,fill=sex))+geom_bar()
+ggplot(data=adult_train, aes( x=occupation,fill=income))+geom_bar()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(data=adult_train, aes( x=education,fill=income))+geom_bar()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(data=adult_train, aes( x=age,fill=income))+geom_bar()+scale_x_continuous(breaks=seq(10,100,5))
+ggplot(data=adult_train, aes( x=hours_per_week,fill=income))+geom_freqpoly(aes(linetype=income,color=income))
+ggplot(data=adult_train, aes( x=race,fill=income))+geom_bar()
+
+#replacing "?" strings to NA accross the dataset
+na_string<-c("?")
+
+adult_train_with_NA<- readr::read_csv("/Users/gokcedamar/Desktop/DATASETS/adult income prediction/adult_train.csv",col_names=FALSE,na = na_string)
+
+colnames(adult_train_with_NA) <- c("age", "workclass", "fnlwgt", "education", "education_num","marital_status", "occupation",
+                           "relationship", "race", "sex", "capital_gain", "capital_loss","hours_per_week", "native_country", "income")
+
+adult_test_with_NA<- readr::read_csv("/Users/gokcedamar/Desktop/DATASETS/adult income prediction/adult_test.csv",col_names=FALSE,na = na_string)
+
+colnames(adult_test_with_NA) <- c("age", "workclass", "fnlwgt", "education", "education_num","marital_status", "occupation",
+                                   "relationship", "race", "sex", "capital_gain", "capital_loss","hours_per_week", "native_country", "income")
+
+#missing values count column-wise
+sapply(adult_train_with_NA,function(x)sum(is.na(x)))
+table(is.na(adult_train_with_NA))
+sapply(adult_test_with_NA,function(x)sum(is.na(x)))
+table(is.na(adult_test_with_NA))
+
+#checking the proportion of missing values with respect to class attribute
+attach(adult_train_with_NA)
+prop.table(table(is.na(workclass),income),1)
+prop.table(table(is.na(occupation),income),1)
+prop.table(table(is.na(native_country),income),1)
+detach(adult_train_with_NA)
+
+attach(adult_test_with_NA)
+prop.table(table(is.na(workclass),income),1)
+prop.table(table(is.na(occupation),income),1)
+prop.table(table(is.na(native_country),income),1)
+detach(adult_test_with_NA)
+
+#number of rows that has missing data and its proportion to whole train dataset
+sum(!complete.cases(adult_train_with_NA))
+prop.table(table(!complete.cases(adult_train_with_NA)))
+
+#number of rows that has missing data and its proportion to whole test dataset
+sum(!complete.cases(adult_test_with_NA))
+prop.table(table(!complete.cases(adult_test_with_NA)))
+
+#removing missing values from train and test dataset
+trainset<-adult_train_with_NA[complete.cases(adult_train_with_NA),]
+
+testset<-adult_test_with_NA[complete.cases(adult_test_with_NA),]
+
+
+#capital_gain and capital_loss
+summary(trainset$capital_gain)
+
+capital_gain_zeros<- trainset[trainset$capital_gain==0,]
+
+capital_loss_zeros <- trainset[trainset$capital_loss==0,]
+
+#percentage of zero values of capital gain at trainset 
+nrow(capital_gain_zeros)/nrow(trainset)*100
+
+#percentage of zero values of capital loss at trainset 
+nrow(capital_loss_zeros)/nrow(trainset)*100
+
+#distribution of non zero capital gain 
+non_zero_CG<-trainset[trainset$capital_gain>0,]
+ggplot(data= non_zero_CG,aes(x=non_zero_CG$capital_gain)) + geom_histogram(binwidth= 2500,colour="red",fill="orange")
+
+#distribution of non zero capital gain with respect to income 
+ggplot(data= non_zero_CG,aes(x=non_zero_CG$capital_gain,fill=non_zero_CG$income)) + geom_histogram(binwidth= 2500,colour="red")
+
+#distribution of non zero capital loss
+non_zero_CL<-trainset[trainset$capital_loss>0,]
+ggplot(data= non_zero_CL,aes(x=non_zero_CL$capital_loss)) + geom_histogram(binwidth= 250,colour="blue",fill="light blue")
+
+#distribution of non zero capital gain with respect to income 
+ggplot(data= non_zero_CL,aes(x=non_zero_CL$capital_loss,fill=non_zero_CL$income)) + geom_histogram(binwidth= 2500,colour="red")
+
+summary(non_zero_CG$capital_gain)
+summary(non_zero_CL$capital_loss)
+
+#creating new categorical variable called capital_gain_new in train and test sets
+trainset <- mutate(trainset , capital_gain_new = ifelse(trainset$capital_gain < 3464, "Low", 
+                                                        ifelse(trainset$capital_gain >= 3464 & trainset$capital_gain <=12978, "Medium","High")
+                   ))
+trainset$capital_gain_new<-factor(trainset$capital_gain_new,levels = c("Low","Medium","High"),ordered = F)
+  
+testset <- mutate(testset , capital_gain_new = ifelse(testset$capital_gain < 3464, "Low", 
+                                                    ifelse(testset$capital_gain >= 3464 & testset$capital_gain <=12978, "Medium","High")
+))
+testset$capital_gain_new<-factor(testset$capital_gain_new,levels = c("Low","Medium","High"),ordered = F)
+
+
+#transforming character variables to factor
+trainset <- mutate_if(trainset, is.character, as.factor)
+testset<-mutate_if(testset,is.character, as.factor)
+
+#transformin hours per week variable at trainset
+trainset$hours_pw[trainset$hours_per_week <= 20]<- "1" 
+trainset$hours_pw[trainset$hours_per_week > 20 & trainset$hours_per_week <40 ]<-"2"
+trainset$hours_pw[trainset$hours_per_week >= 40 & trainset$hours_per_week <=45 ]<-"3"
+trainset$hours_pw[trainset$hours_per_week > 45 & trainset$hours_per_week <=60 ]<-"4"
+trainset$hours_pw[trainset$hours_per_week > 60]<- "5"
+
+trainset$hours_pw<-factor(trainset$hours_pw,levels= c("1","2","3","4","5"),ordered = F)
+
+#transforming hours per week variable at testset
+ggplot(data=trainset, aes(y=hours_per_week))+geom_boxplot()
+
+testset$hours_pw[testset$hours_per_week <= 20]<- "1" 
+testset$hours_pw[testset$hours_per_week > 20 & testset$hours_per_week <40 ]<-"2"
+testset$hours_pw[testset$hours_per_week >= 40 & testset$hours_per_week <=45 ]<-"3"
+testset$hours_pw[testset$hours_per_week > 45 & testset$hours_per_week <=60 ]<-"4"
+testset$hours_pw[testset$hours_per_week > 60]<- "5"
+
+testset$hours_pw<-factor(testset$hours_pw,levels= c("1","2","3","4","5"),ordered = F)
+
+#transforming workclass variable in train set
+levels(trainset$workclass)[c(1,2,6)] <- "Government"
+levels(trainset$workclass)[c(3,4)] <- "Self-Emp"
+levels(trainset$workclass)[-4]
+trainset$workclass <- droplevels(trainset$workclass)
+
+#transforming workclass variable in test set
+levels(testset$workclass)[c(1,2,6)] <- "Government"
+levels(testset$workclass)[c(3,4)] <- "Self-Emp"
+levels(testset$workclass)[-4]
+testset$workclass <- droplevels(testset$workclass)
+
+#transforming education variable in train set
+levels(trainset$education)[c(1,2,3,4,5,6,7,14)]<- "Low_Education"
+levels(trainset$education)[c(2,3)]<- "Associate"
+levels(trainset$education)[c(3,4,6)]<- "High_Education"
+
+#transforming education variable in test set
+levels(testset$education)[c(1,2,3,4,5,6,7,14)]<- "Low_Education"
+levels(testset$education)[c(2,3)]<- "Associate"
+levels(testset$education)[c(3,4,6)]<- "High_Education"
+
+#transforming native country in train set
+Central_America <- c("Honduras","Jamaica","Cuba","Mexico","Nicaragua","Guatemala","Puerto-Rico","Dominican-Republic","Haiti","Trinidad&Tobago","El-Salvador")
+Asia<- c("India","Iran","China","Cambodia","Laos","Hong","Japan","Vietnam","Taiwan","Thailand")
+South_America<- c("Columbia","Peru","Ecuador")
+Europe<- c("Germany","Holand-Netherland","England","Poland","Ireland","Italy","France","Portugal","Yugoslavia","Scotland","Hungary","Greece")
+North_America<-c("United-States","Outlying-US","Canada")
+
+trainset<-mutate(trainset,origin_region = ifelse(native_country %in% Central_America, "Central_America",
+                                                 ifelse(native_country %in% Asia, " Asia",
+                                                        ifelse(native_country %in% South_America, "South_America",
+                                                               ifelse(native_country %in% Europe,"Europe","North_America"
+                                                                      )))))
+trainset$origin_region<-factor(trainset$origin_region,ordered = F)
+
+#transforming native country in test set
+testset<-mutate(testset,origin_region = ifelse(native_country %in% Central_America, "Central_America",
+                                                 ifelse(native_country %in% Asia, " Asia",
+                                                        ifelse(native_country %in% South_America, "South_America",
+                                                               ifelse(native_country %in% Europe,"Europe","North_America"
+                                                               )))))
+testset$origin_region<-factor(testset$origin_region,ordered = F)
+
+#transforming income variable in trainset
+trainset$income<-as.factor(ifelse(trainset$income=='<=50K',0,1))
+
+#transformin income variable in testset
+testset$income <-as.factor(ifelse(testset$income== "<=50K.",0,1))
+
+#dropping "fnlwgt" "education_num" "relationship" "capital_loss" "capital_gain" "hours_per_week" "native_country"
+trainset<-trainset[,-c(3,5,8,11,12,13,14)]
+testset<-testset[,-c(3,5,8,11,12,13,14)]
+
+
+#EDA on cleaned data
+table(trainset$income)
+
+#percentage of income levels
+ggplot(trainset, aes(x=income,fill=income))+ 
+  geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5) +
+  scale_y_continuous(labels=scales::percent)+
+labs(x="Income", y="Percentage of Income Levels")
+
+#age variable
+hist(x=trainset$age,xlab="Age",ylab="Frequency",main="Histogram of Age")
+
+ggplot(data=trainset, aes(age,fill=income))+geom_density(alpha=0.5)+scale_x_continuous(breaks=seq(10,100,5))
+
+ggplot(data=trainset,aes(x = income, y = age)) + geom_boxplot() 
+
+#hours per week variable
+ggplot(data=trainset, aes(hours_pw,fill=sex))+geom_bar()
+
+ggplot(data=trainset,aes(x=age,y=hours_pw, group=sex, color=sex))+geom_line(stat='summary',fun.y='mean')+geom_point(stat='summary', fun.y='mean')+scale_x_continuous(breaks = seq(15,100,5))
+
+ggplot(data=trainset, aes(hours_pw,fill=income))+geom_bar()
+
+
+#origin region variable
+ggplot(trainset,aes(x=origin_region,fill=origin_region))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+#workclass variable
+ggplot(trainset,aes(x=workclass,fill=workclass))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+ggplot(trainset,aes(x=workclass,fill=income))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+#education variable
+ggplot(trainset,aes(x=education,fill=income))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )), stat= "count", vjust = -.5)
+
+ggplot(data=trainset, aes(education,fill=income,color=education))+geom_density(alpha=0.2)
+
+#marital status
+ggplot(trainset,aes(x=marital_status,fill=marital_status))+geom_bar()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(trainset,aes(x=marital_status,fill=income))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+#race variable
+ggplot(trainset,aes(x=race,fill=income))+geom_bar()
+
+
+
+#feature selection
+
+boruta_output <- Boruta(income ~ ., data=trainset, doTrace=2)
+
+signf<- getSelectedAttributes(boruta_output,withTentative = FALSE)
+
+#to see the balance one last time
+
+table(trainset$income)
+
+ggplot(data=trainset, aes( x=income,fill=income))+geom_bar(aes(y=(..count..)/sum(..count..)))+
+  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+                 y= ((..count..)/sum(..count..) )/2), stat= "count", vjust = -.5)
+
+#oversampling minority class
+drops<-c("income")
+set.seed(1000)
+over_sampled_train<- upSample(x=trainset[ , !(names(trainset) %in% drops)],
+                              y=trainset$income,
+                              yname="income")
+table(over_sampled_train$income)
+#undersampling majority class
+set.seed(1000)
+under_sampled_train <- downSample(x=trainset[ , !(names(trainset) %in% drops)],
+                                  y=trainset$income,
+                                  yname="income")
+table(under_sampled_train$income)
+#SMOTE
+trainset.df<-as.data.frame(trainset)
+set.seed(1000)
+smoteTrain<-SMOTE(income ~ ., data=trainset.df)
+
+#LOGISTIC REGRESSION
+
+#on unbalanced train dataset
+
+glm_model_unbalanced<-glm(income ~. ,data=trainset.df,
+                          family=binomial(link="logit"),
+                          x=TRUE,
+                          y=TRUE)
+
+predicted_glm_ub_train<- predict(glm_model_unbalanced,newdata=trainset.df,type="response")
+predicted_glm_ub_train<-as.factor(ifelse(predicted_glm_ub_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_ub_train, reference = trainset.df$income,positive = levels(trainset.df$income)[2],mode="prec_recall")
+ #on test set
+predicted_glm_ub_test<- predict(glm_model_unbalanced,newdata=testset,type="response")
+predicted_glm_ub_test<-as.factor(ifelse(predicted_glm_ub_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_ub_test, reference = testset$income, positive = levels(testset$income)[2],mode="prec_recall")
+
+#Area Under Curve
+predicted_glm_ub_test_roc<- predict(glm_model_unbalanced,testset)
+curve_glm_unbalanced <-roc(response=testset$income,predictor=as.numeric(predicted_glm_ub_test_roc))
+auc(curve_glm_unbalanced)
+plot(curve_glm_unbalanced)
+
+
+#over sampled trainset
+glm_model_over<-glm(income ~. ,data=over_sampled_train,
+                          family=binomial(link="logit"),
+                          x=TRUE,
+                          y=TRUE)
+
+predicted_glm_over_train<- predict(glm_model_over,newdata=over_sampled_train,type="response")
+predicted_glm_over_train<-as.factor(ifelse(predicted_glm_over_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_over_train, reference = over_sampled_train$income, positive = levels(over_sampled_train$income)[2],mode="prec_recall")
+
+#on test set
+predicted_glm_over_test<- predict(glm_model_over,newdata=testset,type="response")
+predicted_glm_over_test<-as.factor(ifelse(predicted_glm_over_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_over_test, reference = testset$income, positive = levels(testset$income)[2],mode="prec_recall")
+
+predicted_glm_over_test_roc<- predict(glm_model_over,testset)
+curve_glm_over <-roc(response=testset$income,predictor=as.numeric(predicted_glm_over_test_roc))
+auc(curve_glm_over)
+plot(curve_glm_over)
+
+#undersampled trainset
+glm_model_under<-glm(income ~. ,data=under_sampled_train,
+                    family=binomial(link="logit"),
+                    x=TRUE,
+                    y=TRUE)
+
+predicted_glm_under_train<- predict(glm_model_over,newdata=under_sampled_train,type="response")
+predicted_glm_under_train<-as.factor(ifelse(predicted_glm_under_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_under_train, reference = under_sampled_train$income, positive = levels(under_sampled_train$income)[2],mode="prec_recall")
+
+#on test set
+predicted_glm_under_test<- predict(glm_model_under,newdata=testset,type="response")
+predicted_glm_under_test<-as.factor(ifelse(predicted_glm_under_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_under_test, reference = testset$income, positive = levels(testset$income)[2],mode="prec_recall")
+
+predicted_glm_under_test_roc<- predict(glm_model_under,testset)
+curve_glm_under <-roc(response=testset$income,predictor=as.numeric(predicted_glm_under_test_roc))
+auc(curve_glm_under)
+plot(curve_glm_under)
+
+#smote trainset
+glm_model_smote<-glm(income ~. ,data=smoteTrain,
+                     family=binomial(link="logit"),
+                     x=TRUE,
+                     y=TRUE)
+
+predicted_glm_smote_train<- predict(glm_model_smote,newdata=smoteTrain,type="response")
+predicted_glm_smote_train<-as.factor(ifelse(predicted_glm_smote_train > 0.5,1,0))
+confusionMatrix(data=predicted_glm_smote_train, reference = smoteTrain$income, positive = levels(smoteTrain$income)[2],mode="prec_recall")
+
+#on test set
+predicted_glm_smote_test<- predict(glm_model_smote,newdata=testset,type="response")
+predicted_glm_smote_test<-as.factor(ifelse(predicted_glm_smote_test > 0.5,1,0))
+confusionMatrix(data=predicted_glm_smote_test, reference = testset$income, positive = levels(testset$income)[2],mode="prec_recall")
+
+predicted_glm_smote_test_roc<- predict(glm_model_smote,testset)
+curve_smote <-roc(response=testset$income,predictor=as.numeric(predicted_glm_smote_test_roc))
+plot(curve_smote,asp=NA, print.auc=TRUE)
+auc(curve_smote)
+
+#RANDOM FOREST
+
+#on unbalanced trainset
+random_forest_ub <- randomForest(income ~., ntree=1000,data=trainset.df,fold=10)
+predicted_rf_ub_train <-predict(random_forest_ub,newdata=trainset.df,type = "response")
+confusionMatrix(data=predicted_rf_ub_train,reference=trainset.df$income,positive = levels(trainset.df$income)[2],mode="prec_recall")
+
+#on test set
+predicted_rf_ub_test <-predict(random_forest_ub,newdata=testset,type = "response")
+confusionMatrix(data=predicted_rf_ub_test,reference=testset$income,positive = levels(testset$income)[2],mode="prec_recall")
+
+#roc curve
+predicted_rf_ub_test_roc<- predict(random_forest_ub,testset, type="prob")
+curve_rf_unbalanced <-roc(response=testset$income,predictor=as.numeric(predicted_rf_ub_test_roc[,"1"]))
+auc(curve_rf_unbalanced)
+
+#oversampled trainset
+random_forest_over <- randomForest(income ~., ntree=100,data=over_sampled_train,fold=10)
+predicted_rf_over_train <-predict(random_forest_over,newdata=over_sampled_train,type = "response")
+confusionMatrix(data=predicted_rf_over_train,reference=over_sampled_train$income,positive = levels(over_sampled_train$income)[2],mode="prec_recall")
+
+#on test set
+predicted_rf_over_test <-predict(random_forest_over,newdata=testset,type = "response")
+confusionMatrix(data=predicted_rf_over_test,reference=testset$income,positive = levels(testset$income)[2],mode="prec_recall")
+
+#roc curve
+predicted_rf_over_test_roc<- predict(random_forest_over,testset, type="prob")
+curve_rf_over <-roc(response=testset$income,predictor=as.numeric(predicted_rf_over_test_roc[,"1"]))
+auc(curve_rf_over)
+
+#undersampled trainset
+
+random_forest_under <- randomForest(income ~., ntree=100,data=under_sampled_train, fold=10)
+predicted_rf_under_train <-predict(random_forest_under,newdata=under_sampled_train,type = "response")
+confusionMatrix(data=predicted_rf_under_train,reference=under_sampled_train$income,positive = levels(under_sampled_train$income)[2],mode="prec_recall")
+
+#on test set
+predicted_rf_under_test <-predict(random_forest_under,newdata=testset,type = "response")
+confusionMatrix(data=predicted_rf_under_test,reference=testset$income,positive = levels(testset$income)[2],mode="prec_recall")
+
+#roc curve
+predicted_rf_under_test_roc<- predict(random_forest_under,testset, type="prob")
+curve_rf_under <-roc(response=testset$income,predictor=as.numeric(predicted_rf_under_test_roc[,"1"]))
+auc(curve_rf_under)
+
+#smote trainset
+
+random_forest_smote<- randomForest(income ~., ntree=100,data=smoteTrain,fold=10)
+predicted_rf_smote_train <-predict(random_forest_smote,newdata=smoteTrain,type = "response")
+confusionMatrix(data=predicted_rf_smote_train,reference=smoteTrain$income,positive = levels(smoteTrain$income)[2],mode="prec_recall")
+
+#on test set
+predicted_rf_smote_test <-predict(random_forest_smote,newdata=testset,type = "response")
+confusionMatrix(data=predicted_rf_smote_test,reference=testset$income,positive = levels(testset$income)[2],mode="prec_recall")
+
+#roc curve
+predicted_rf_smote_test_roc<- predict(random_forest_smote,testset, type="prob")
+curve_rf_smote <-roc(response=testset$income,predictor=as.numeric(predicted_rf_smote_test_roc[,"1"]))
+auc(curve_rf_smote)
+
+#XGBoost
+
+#one hot encoding
+
+ub_labels<-trainset.df$income
+over_labels<-over_sampled_train$income
+under_labels<-under_sampled_train$income
+smote_labels<-smoteTrain$income
+test_labels<-testset$income
+
+new_ub_train <-model.matrix(~.+0,data=trainset.df[,-8],with=F)
+new_over_train <-model.matrix(~.+0,data=over_sampled_train[,-11],with=F)
+new_under_train <-model.matrix(~.+0,data=under_sampled_train[,-11],with=F)
+new_smote_train <-model.matrix(~.+0,data=smoteTrain[,-8],with=F)
+new_test<-model.matrix(~.+0,data=testset[,-8],with=F)
+
+#convert factor to numerical
+ub_labels<-as.numeric(ub_labels)-1
+over_labels<-as.numeric(over_labels)-1
+under_labels<-as.numeric(under_labels)-1
+smote_labels<- as.numeric(smote_labels)-1
+test_labels<-as.numeric(test_labels)-1
+
+new_ub_train2<-xgb.DMatrix(data=new_ub_train,label=ub_labels)
+new_over_train2<-xgb.DMatrix(data=new_over_train,label=over_labels)
+new_under_train2<-xgb.DMatrix(data=new_under_train,label=under_labels)
+new_smote_train2<-xgb.DMatrix(data=new_smote_train,label=smote_labels)
+dtest<-xgb.DMatrix(data=new_test,label=test_labels)
+
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.057, max_depth=4, min_child_weight=1, subsample=0.7, colsample_bytree=0.7)
+
+#for unbalanced
+xgb_ub_train <- xgb.cv( params = params, data=new_ub_train2, nrounds=700, nfold=10, showsd= T,
+                                 stratified = T, print_every_n = 10, early_stopping_rounds = 50,
+                                 maximize= F)
+
+xgb_fit_ub<-xgb.train(params,new_ub_train2,500)
+
+predicted_xgb_ub_train<-predict(xgb_fit_ub,new_ub_train)
+predicted_xgb_ub_train<-ifelse(predicted_xgb_ub_train >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_ub_train),as.factor(ub_labels),positive = levels(ub_labels["1"]),mode="prec_recall")
+
+predicted_xgb_ub_test<-predict(xgb_fit_ub,new_test)
+predicted_xgb_ub_test <-ifelse(predicted_xgb_ub_test >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_ub_test),as.factor(test_labels),positive = levels(test_labels["1"]),mode="prec_recall")
+
+#roc curve 
+curve_xgb_ub <-roc(response=testset$income,predictor=as.numeric(predicted_xgb_ub_test), algorithm = 2)
+auc(curve_xgb_ub)
+
+#for over sampled
+xgb_over_train <- xgb.cv( params = params, data=new_over_train2, nrounds=700, nfold=10, showsd= T,
+                        stratified = T, print_every_n = 10, early_stopping_rounds = 50,
+                        maximize= F)
+
+xgb_fit_over<-xgb.train(params,new_over_train2,500)
+
+predicted_xgb_over_train<-predict(xgb_fit_ub,new_over_train)
+predicted_xgb_over_train<-ifelse(predicted_xgb_over_train >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_over_train),as.factor(over_labels),positive = levels(over_labels["1"]),mode="prec_recall")
+
+predicted_xgb_over_test<-predict(xgb_fit_over,new_test)
+predicted_xgb_over_test <-ifelse(predicted_xgb_over_test >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_over_test),as.factor(test_labels),positive = levels(test_labels["1"]),mode="prec_recall")
+
+#roc curve 
+curve_xgb_over <-roc(response=testset$income,predictor=as.numeric(predicted_xgb_over_test), algorithm = 2)
+auc(curve_xgb_over)
+
+#for under sampled
+xgb_under_train <- xgb.cv( params = params, data=new_under_train2, nrounds=700, nfold=10, showsd= T,
+                          stratified = T, print_every_n = 10, early_stopping_rounds = 50,
+                          maximize= F)
+
+xgb_fit_under<-xgb.train(params,new_under_train2,500)
+
+predicted_xgb_under_train<-predict(xgb_fit_ub,new_under_train)
+predicted_xgb_under_train<-ifelse(predicted_xgb_under_train >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_under_train),as.factor(under_labels),positive = levels(under_labels["1"]),mode="prec_recall")
+
+predicted_xgb_under_test<-predict(xgb_fit_under,new_test)
+predicted_xgb_under_test<-ifelse(predicted_xgb_under_test >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_under_test),as.factor(test_labels),positive = levels(test_labels["1"]),mode="prec_recall")
+
+#roc curve 
+curve_xgb_under <-roc(response=testset$income,predictor=as.numeric(predicted_xgb_under_test), algorithm = 2)
+auc(curve_xgb_under)
+
+#for smote
+xgb_smote_train <- xgb.cv( params = params, data=new_smote_train2, nrounds=700, nfold=10, showsd= T,
+                           stratified = T, print_every_n = 10, early_stopping_rounds = 50,
+                           maximize= F)
+xgb_fit_smote<-xgb.train(params,new_smote_train2,500)
+
+predicted_xgb_smote_train<-predict(xgb_fit_ub,new_smote_train)
+predicted_xgb_smote_train<-ifelse(predicted_xgb_smote_train >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_smote_train),as.factor(smote_labels),positive = levels(smote_labels),mode="prec_recall")
+
+predicted_xgb_smote_test<-predict(xgb_fit_smote,new_test)
+predicted_xgb_smote_test <-ifelse(predicted_xgb_smote_test >= 0.5,1,0)
+confusionMatrix(as.factor(predicted_xgb_smote_test),as.factor(test_labels),positive = levels(test_labels["1"]),mode="prec_recall")
+
+#roc curve 
+curve_xgb_smote <-roc(response=testset$income,predictor=as.numeric(predicted_xgb_smote_test), algorithm = 2)
+auc(curve_xgb_smote)
+
+#SVM
+
+#for unbalanced
+
+svm_ub1<-svm(income ~., data=trainset.df,kernel="radial",cost=10,method="C-classification",gamma=0.1)
+
+confusionMatrix(data=as.factor(predict(svm_ub1,trainset[,-8])),reference=as.factor(trainset$income),mode="prec_recall")
+
+confusionMatrix(data=as.factor(predict(svm_ub1,testset[,-8])),reference=as.factor(testset$income),mode="prec_recall")
+
+#roc curve 
+curve_svm_ub <-roc(response=testset$income,predictor=as.numeric(predict(svm_ub1,testset[,-8])))
+auc(curve_svm_ub)
+
+#for over_sampled
+svm_over<-svm(income ~., data=over_sampled_train,kernel="radial",cost=10,method="C-classification",gamma=0.1)
+
+confusionMatrix(data=as.factor(predict(svm_over,over_sampled_train[,-11])),reference=as.factor(over_sampled_train$income),mode="prec_recall")
+
+confusionMatrix(data=as.factor(predict(svm_over,testset[,-8])),reference=as.factor(test_labels),mode="prec_recall")
+
+#roc curve 
+curve_svm_over <-roc(response=testset$income,predictor=as.numeric(predict(svm_over,testset[,-8])))
+auc(curve_svm_over)
+
+#for under sampled
+svm_under<-svm(income ~., data=under_sampled_train,kernel="radial",cost=10,method="C-classification",gamma=0.1)
+
+confusionMatrix(data=as.factor(predict(svm_under,under_sampled_train[,-11])),reference=as.factor(under_sampled_train$income),mode="prec_recall")
+
+confusionMatrix(data=as.factor(predict(svm_under,testset[,-8])),reference=as.factor(test_labels),mode="prec_recall")
+
+#roc curve 
+curve_svm_under <-roc(response=testset$income,predictor=as.numeric(predict(svm_under,testset[,-8])))
+auc(curve_svm_under)
+
+#for SMOTE
+svm_smote<-svm(income ~., data=smoteTrain,kernel="radial",cost=10,method="C-classification",gamma=0.1)
+
+confusionMatrix(data=as.factor(predict(svm_smote,smoteTrain[,-8])),reference=smoteTrain$income,mode="prec_recall")
+
+confusionMatrix(data=as.factor(predict(svm_smote,testset[,-8])),reference=as.factor(test_labels),mode="prec_recall")
+
+#roc curve 
+curve_svm_smote <-roc(response=testset$income,predictor=as.numeric(predict(svm_smote,testset[,-8])))
+auc(curve_svm_smote)
