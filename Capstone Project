@@ -50,12 +50,12 @@ ggplot(data=adult_train, aes( x=race,fill=income))+geom_bar()
 #replacing "?" strings to NA accross the dataset
 na_string<-c("?")
 
-adult_train_with_NA<- readr::read_csv("/Users/gokcedamar/Desktop/DATASETS/adult income prediction/adult_train.csv",col_names=FALSE,na = na_string)
+adult_train_with_NA<- readr::read_csv("/Users/adult_train.csv",col_names=FALSE,na = na_string)
 
 colnames(adult_train_with_NA) <- c("age", "workclass", "fnlwgt", "education", "education_num","marital_status", "occupation",
                            "relationship", "race", "sex", "capital_gain", "capital_loss","hours_per_week", "native_country", "income")
 
-adult_test_with_NA<- readr::read_csv("/Users/gokcedamar/Desktop/DATASETS/adult income prediction/adult_test.csv",col_names=FALSE,na = na_string)
+adult_test_with_NA<- readr::read_csv("/Users/adult_test.csv",col_names=FALSE,na = na_string)
 
 colnames(adult_test_with_NA) <- c("age", "workclass", "fnlwgt", "education", "education_num","marital_status", "occupation",
                                    "relationship", "race", "sex", "capital_gain", "capital_loss","hours_per_week", "native_country", "income")
